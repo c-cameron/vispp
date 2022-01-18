@@ -19,8 +19,9 @@ def plot_matched(
     x_xoffset=0.2,
     ax=None,
     figsize=(9, 6),
-    sort_marker="⇔",
+    sort_marker="$",
     error="amend",
+    estimator='mean',
     cp=None,
 ):
     if bool(x_match_sort) and bool(sort_idx):
@@ -33,7 +34,7 @@ def plot_matched(
         x_order = list(x_order)
         data = data.loc[data[x].isin(x_order)]
         ux = data[x].unique()
-        clean_order = [x_order[i] for i in range(len(x_order)) if x_order[i] in ux]
+        clean_order = [x_order[i] for i in range(len(x_order)) for ux1 in ux if x_order[i] == ux1] #added extra for loop instead of in, because testing with tuples throws error
         if len(clean_order) < len(x_order):
             print("Warning: Truncating ordering, as some pipelines not existing in data frame.")
             x_order = clean_order
@@ -75,6 +76,7 @@ def plot_matched(
         N=(num_matched // n_markers + 1 + c_offs_left + c_offs_right),
     )
     legend_handles = []
+    m_scores = []
     for i, x_main in enumerate(x_order):
         base_col = cp[i]
         cmap = LinearSegmentedColormap.from_list(
@@ -90,7 +92,13 @@ def plot_matched(
         x_center = i + 1
         x_width = 0.5 - x_xoffset / 2
         x_space = np.linspace(x_center - x_width, x_center + x_width, num_matched)
-        m_score, m_std = r.aggregate((np.mean, np.std))[y]
+        if estimator == 'mean':
+            m_score, m_std = r[y].aggregate((np.mean, np.std))
+        elif estimator == 'median':
+            m_score, m_std = r[y].aggregate((np.median, np.std))
+        else:
+            raise ValueError(f'{estimator} is an invalid estimator, only "mean" or "median" are allowed')
+        m_scores.append(m_score)
         m_err = m_std / np.sqrt(num_matched)
         err_artists = ax.errorbar(
             x_center,
@@ -144,11 +152,12 @@ def plot_matched(
                     )
                 )
                 # need to translate markersize between scatter and plt function, 1.2*sqrt() seems to work kind of
+    ax.axhline(np.max(m_scores), linestyle='--')
     ax.set_xticks(np.arange(1, num_x + 1))
     xticklabels = list(x_order)
     if x_match_sort is not None:
         xticklabels[x_order.index(x_match_sort)] = (
-            sort_marker + x_order[x_order.index(x_match_sort)]
+            sort_marker + str(x_order[x_order.index(x_match_sort)])
         )
     ax.set_xticklabels(xticklabels)
     ax.set_xlim(0, num_x + 1)
@@ -163,3 +172,81 @@ def plot_matched(
     ax.set_xlabel(x)
     ax.set_ylabel(y)
     return ax, (legend_handles, legend_labels)
+
+
+
+def plot_matched_diffs(data=None,
+                       base_value=None,
+                       compare_column=None,
+                       score_metric='score',
+                       x_order=None,
+                       ylim=None,
+                       ):
+    '''plot subject-wise differences between pipelines
+    base_pipeline: is the pipeline that will be subtracted from the others
+    x_order: contains all other pipelines, can still include the base pipeline'''
+    if base_value is None:
+        base_value = data.pipeline[0]
+        print('No base pipeline passed, selecting first pipeline in data')
+    if compare_column is None:
+        compare_column = "pipeline"
+
+    base_df = (data.loc[data.pipeline == base_value]
+                   .sort_values('subject')
+                   .set_index([compare_column, 'dataset', 'subject', 'samples'])
+                   .reset_index(drop=True)
+                   .loc[:, score_metric]
+                   )
+
+    compare_df = (data.loc[data.pipeline != base_value]
+                      .sort_values([compare_column,'subject'])
+                      .set_index([compare_column, 'dataset', 'subject', 'samples'])
+                      .loc[:, score_metric]
+                      )
+    compare_index = compare_df.index
+
+    diff_df = compare_df.reset_index(drop=True) - base_df.iloc[
+        np.tile(np.arange(len(base_df)),len(data[compare_column].unique()) - 1)].reset_index(drop=True)
+    diff_df.index = compare_index
+    diff_df = diff_df.reset_index()
+    if ylim is not None:
+        ymin, ymax = ylim
+    else:
+        ymin, ymax = diff_df[score_metric].min(), diff_df[score_metric].max()
+
+    if x_order is None:
+        x_order = diff_df[compare_column].sort_values().unique().tolist()
+    else:
+        cp = sns.color_palette()
+        del cp[x_order.index(base_value)]
+        x_order.remove(base_value)
+    # diff_df = diff_df.append(
+    #     plot_df.loc[plot_df.pipeline == base_pipeline, ['pipeline', 'dataset', 'subject', 'samples', 'score']])
+    #x_order.append(base_pipeline)
+    sort_idx = (
+        data.loc[data['pipeline'] == base_value]
+            .sort_values(by="subject", ascending=True)
+            .reset_index()
+            .sort_values(by=score_metric, ascending=True)
+            .index.copy()
+    )
+
+    fig, ax = plt.subplots(1, 1, dpi=200)
+    ax, legend_stuff = plot_matched(
+        x='pipeline',
+        y=score_metric,
+        data=diff_df,
+        match_col="subject",
+        # x_match_sort=x_match_sort,
+        x_order=x_order,
+        sort_idx=sort_idx,
+        # x_labels=get_clean_xlabels(subset_pipelines),
+        ax=ax,
+        sort_marker="",
+        estimator='mean',
+        cp=cp,
+    )
+
+    ax.axhline(y=0, color='k', linestyle='--')
+    ax.set_ylim([ymin - 0.05, ymax + 0.05])
+    return ax, legend_stuff
