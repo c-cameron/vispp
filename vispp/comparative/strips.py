@@ -20,6 +20,7 @@ def plot_matched(
     ax=None,
     figsize=(9, 6),
     sort_marker="$",
+    legendmarker=False, #If False, plot normal Markers, else plot legend number or string as marker
     error="amend",
     estimator='mean',
     cp=None,
@@ -124,7 +125,10 @@ def plot_matched(
         )
         for j, x_j in enumerate(x_space):
             score = r[y].iloc[j]
-            m = marker_arr[j % len(marker_arr)]
+            if legendmarker:
+                m = f"${r[match_col].iloc[j]}$" # Use Strings as markers, usually subject number
+            else:
+                m = marker_arr[j % len(marker_arr)]
             sdef = 35
             s = (
                 sdef * 0.66 if m in ["s", "D"] else sdef
@@ -152,7 +156,7 @@ def plot_matched(
                     )
                 )
                 # need to translate markersize between scatter and plt function, 1.2*sqrt() seems to work kind of
-    ax.axhline(np.max(m_scores), linestyle='--')
+    ax.axhline(np.max(m_scores), linestyle='--', c="k", linewidth=1)
     ax.set_xticks(np.arange(1, num_x + 1))
     xticklabels = list(x_order)
     if x_match_sort is not None:
