@@ -24,6 +24,7 @@ def plot_matched(
     error="amend",
     estimator='mean',
     cp=None,
+    hline="max"
 ):
     if bool(x_match_sort) and bool(sort_idx):
         raise ValueError("Either x_match_sort or sort_idx should be passed, not both!")
@@ -156,7 +157,11 @@ def plot_matched(
                     )
                 )
                 # need to translate markersize between scatter and plt function, 1.2*sqrt() seems to work kind of
-    ax.axhline(np.max(m_scores), linestyle='--', c="k", linewidth=1)
+    if hline=="max":
+        ax.axhline(np.max(m_scores), linestyle='--', c="k", linewidth=1)
+    if hline=="zero":
+        ax.axhline(0, linestyle='--', c="k", linewidth=1)
+
     ax.set_xticks(np.arange(1, num_x + 1))
     xticklabels = list(x_order)
     if x_match_sort is not None:
